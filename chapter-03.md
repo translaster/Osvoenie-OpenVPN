@@ -359,3 +359,674 @@ keyid:F0:AF:20:ED:6F:A7:47:0F:C7:F2:B0:EC:CF:8B:30:09:02:E4:81:A0
 ```
 
 Как отмечено в разделе о сервере, мы рассмотрим `x509v3 Extended Key Usage`. В случае клиента мы ищем `TLS Web Client Authentication`. Опять же, это используется при проверке типа сертификата удаленного клиента.
+
+### PKI с использованием ssl-admin
+
+Проект ssl-admin был запущен в то время, когда EasyRSA считался заброшенным и сломанным. Это интерактивная утилита на основе меню, написанная на Perl. Как и EasyRSA, ssl-admin - это оболочка для утилит командной строки OpenSSL.
+
+Чтобы установить ssl-admin во FreeBSD, установите порт `security/ssl-admin`. Для всех других Unix-систем, включая OS X, экспорт svn является самым простым методом. Следующие примеры выполняются на Mac OS X, но будут аналогичны для других операционных систем.
+
+Чтобы получить ssl-admin в ОС, отличной от FreeBSD, используйте утилиту командной строки SVN для экспорта текущей версии:
+
+```
+ftp://ftp.secure-computing.net/pub/ssl-admin/
+
+ecrist@computer:~-> curl -o ssa.tgz ftp://ftp.secure-computing.net//pub/ssl-admin/ssl-admin-1.2.1.tar.gz
+  % Total % Received % Xferd Average Speed Time Time Time
+Current
+                            Dload Upload Total Spent Left
+Speed
+100 11196 100 11196  0     0 17568   0 --:--:-- --:--:-- --:--:--
+17548
+```
+
+---
+
+**Подсказка**
+
+Сервер `ftp2.secure-computing.net` может быть использован в качестве альтернативы, если основной `ftp.secure-computing.net` недоступен.
+
+---
+
+```
+ecrist@computer:~-> tar -xzvf ssa.tgz
+x ssl-admin-1.2.1/
+x ssl-admin-1.2.1/man5/
+x ssl-admin-1.2.1/man1/
+x ssl-admin-1.2.1/ssl-admin
+x ssl-admin-1.2.1/ssl-admin.conf
+x ssl-admin-1.2.1/Makefile
+x ssl-admin-1.2.1/configure
+x ssl-admin-1.2.1/openssl.conf
+x ssl-admin-1.2.1/ssl-admin-e
+x ssl-admin-1.2.1/man1/ssl-admin.1
+x ssl-admin-1.2.1/man1/ssl-admin.1-e
+x ssl-admin-1.2.1/man5/ssl-admin.conf.5
+x ssl-admin-1.2.1/man5/ssl-admin.conf.5-e
+```
+
+Чтобы установить после экспорта, измените директорию на ваше экспортируемое дерево и запустите `./configure`, а затем `make install`:
+
+```
+ecrist@computer:~/ssl-admin-1.2.1-> ./configure
+```
+
+---
+
+**Подсказка**
+
+Bourne Shell является единственным требованием для настройки. Это не типичный набор правил настройки, он просто имитирует его поведение.
+
+---
+
+```
+ecrist@computer:~/ssl-admin-1.2.1-> sudo make install
+```
+
+После установки при запуске команды `ssl-admin` сначала отобразится ошибка:
+
+```
+ecrist@computer:~/ssl-admin-> ssl-admin
+Libraryssl-admin/ssl-admin.conf doesn't exist. Did you copy the
+sample from Libraryssl-admin/ssl-admin.conf.sample? at
+/usr/local/bin/ssl-admin line 40.
+```
+
+---
+
+**Подсказка**
+
+Некоторые версии ssl-admin ссылаются на следующий файл: `ssl-admin.conf.default`.
+
+Чтобы начать использовать программное обеспечение, необходимо скопировать файл по умолчанию в место, указанное в сообщении об ошибке. Это зависит от операционной системы в зависимости от их стандартной иерархии файловой системы. Здесь мы скопируем `ssl-admin.conf.sample` в `ssl-admin.conf` и исправим разрешения для нового файла.
+
+---
+---
+
+**Заметка**
+
+`ssl-admin` требует чтобы все операции выполнялись от имени пользователя root. Это известная плохая практика и она будет исправлена ​​в следующем выпуске.
+
+---
+
+Команды для этого следующие:
+
+```
+ecrist@computer:~/ssl-admin-> sudo csh
+Password:
+```
+
+Нет особой причины использовать csh, это было просто предпочтение автора (лучшее или к худшее).
+
+```
+root@computer:~/ssl-admin-> cd Libraryssl-admin/
+root@computer:Libraryssl-admin-> cp ssl-admin.conf.sample ssl-admin.conf
+root@computer:Libraryssl-admin-> chmod ug+rw ssl-admin.conf
+root@computer:Libraryssl-admin-> ls -l
+total 12
+-r--r--r-- 1 root wheel 2511 Oct 1 12:02 openssl.conf.sample
+-rw-rw-r-- 1 root wheel 531 Oct 1 12:11 ssl-admin.conf
+-r--r--r-- 1 root wheel 531 Oct 1 12:02 ssl-admin.conf.sample
+```
+
+Отсюда мы можем редактировать файл конфигурации. Как правило, необходимо изменить только нижние переменные:
+
+* `$ENV{'KEY_COUNTRY'}`
+* `$ENV{'KEY_PROVINCE'}`
+* `$ENV{'KEY_CITY'}`
+* `$ENV{'KEY_ORG'}`
+* `$ENV{'KEY_EMAIL'}`
+* `$ENV{'KEY_COUNTRY'}`
+
+Переменная `KEY_COUNTRY` должна состоять из двух букв. Это ограничение/запрет стандарта, а не `ssl-admin`. Эти значения совпадают с одноименными переменными в EasyRSA. Они не должны быть изменены после создания CA, так как `openssl` будет выдавать ошибки для несовпадающих значений.
+
+---
+
+**Подсказка**
+
+`$ENV{'KEY_CRL_LOC'}` следует оставить в покое, если в вашей организации нет действующего URL-адреса для распространения CRL. Пустое значение приведет к ошибкам с `openssl`.
+
+Как только файл конфигурации был отредактирован, мы можем запустить программу. При первом запуске ssl-admin проверит хранилище сертификатов. Если в нем нет действующего ЦС и структуры, пользователь может импортировать существующую PKI или создать новую PKI. Как и в случае с EasyRSA, мы создаем новый центр сертификации. В некоторых операционных системах файл `/etc/openssl.cnf` необходимо скопировать вручную в корень хранилища сертификатов. Эта ошибка не встречалась в Mac OS X. В системах Linux просто скопируйте файл `/etc/openssl.cnf` в файл `/etc/ssl-admin/openssl.cnf`. Это будет исправлено в более позднем выпуске ssl-admin.
+
+```
+root@computer:/Library/ssl-admin-> ssl-admin
+This program will walk you through requesting, signing,
+organizing and revoking SSL certificates.
+
+Looks like this is a new install, installing...
+You will first need to edit the /Library/ssl-admin/ssl-admin.conf
+default variables. Have you done this? (y/n): y
+I need the CA credentials. Would you like to create a new CA key
+and
+certificate now? (y/n): y
+Please enter certificate owner's name or ID.
+Usual format is first initial-last name (jdoe) or
+hostname of server which will use this certificate.
+All lower case, numbers OK.
+Owner []: Mastering OpenVPN
+
+
+File names will use Mastering_OpenVPN.
+
+
+===> Creating private key with 2048 bits and generating request.
+Do you want to password protect your CA private key? (y/n): y
+Generating RSA private key, 2048 bit long modulus
+.....................................+++
+............+++
+e is 65537 (0x10001)
+Enter pass phrase for Mastering_OpenVPN.key:
+Verifying - Enter pass phrase for Mastering_OpenVPN.key:
+===> Self-Signing request.
+Enter pass phrase for /Library/ssl-admin/Mastering_OpenVPN.key:
+===> Moving certficate and key to appropriate directory.
+===> Creating initial CRL.Using configuration from /Library/ssl-admin/openssl.conf
+Enter pass phrase for /Library/ssl-admin/active/ca.key:
+ssl-admin installed Wed Oct 1 12:28:23 CDT 2014
+OPTIONAL: I can't find your OpenVPN client config. Please copy
+your config to
+Libraryssl-admin/packages/client.ovpn
+
+=====================================================
+# SSL-ADMIN v1.2.1 #
+=====================================================
+Please enter the menu option from the following list:
+1) Update run-time options:
+     Key Duration (days): 3650
+     Current Serial #: 01
+     Key Size (bits): 2048
+     Intermediate CA Signing: NO
+2) Create new Certificate Request
+3) Sign a Certificate Request
+4) Perform a one-step request/sign
+5) Revoke a Certificate
+6) Renew/Re-sign a past Certificate Request
+7) View current Certificate Revokation List
+8) View index information for certificate.
+i) Generate a user config with in-line certifcates and keys.
+z) Zip files for end user.
+dh) Generate Diffie Hellman parameters.
+CA) Create new Self-Signed CA certificate.
+S) Create new Signed Server certificate.
+q) Quit ssl-admin
+
+Menu Item:
+```
+
+Как видите, ssl-admin значительно более многословен и интерактивен, чем EasyRSA. Кроме того, ssl-admin автоматически генерирует начальный CRL для вас.
+
+Перед отображением меню было `OPTIONAL` предупреждение о конфигурации OpenVPN. Если вы предоставляете свою конфигурацию `client.ovpn`, ssl-admin может автоматически упаковывать конфигурационные файлы со встроенными сертификатами или многофайловый ZIP-файл. Строки сертификата файла конфигурации должны быть универсальными:
+
+```
+ca ca.crt
+
+cert client.crt
+
+key client.key
+```
+
+Эти значения будут автоматически заменены встроенными ключами или файлы будут переименованы в соответствии с тем, как распространяются сертификаты, ключи и конфигурации OpenVPN. Теперь, когда мы инициализировали PKI путем создания пары ключей корневого центра сертификации, мы можем приступить к созданию сертификатов нашего сервера и клиента.
+
+### Серверные сертификаты OpenVPN
+
+Сначала мы создадим сертификат для использования на сервере OpenVPN. Опция меню `S` сгенерирует CSR, ключ и предложит подписать сертификат центром сертификации:
+
+```
+Menu Item: S
+Please enter certificate owner's name or ID.
+Usual format is first initial-last name (jdoe) or
+hostname of server which will use this certificate.
+All lower case, numbers OK.
+Owner []: Mastering OpenVPN Server
+
+
+File names will use Mastering_OpenVPN_Server.
+Please enter certificate owner's name or ID.
+Usual format is first initial-last name (jdoe) or
+hostname of server which will use this certificate.
+All lower case, numbers OK.
+Owner [Mastering_OpenVPN_Server]:
+Would you like to password protect the private key (y/n): y
+Generating a 2048 bit RSA private key
+..................+++
+.........+++
+writing new private key to 'Mastering_OpenVPN_Server.key'
+Enter PEM pass phrase:
+Verifying - Enter PEM pass phrase:
+-----
+===> Serial Number = 01
+Using configuration from /Library/ssl-admin/openssl.conf
+Enter pass phrase for /Library/ssl-admin/active/ca.key:
+Check that the request matches the signature
+Signature ok
+The Subject's Distinguished Name is as follows
+countryName :PRINTABLE:'ZA'
+stateOrProvinceName :PRINTABLE:'Enlightenment'
+localityName :PRINTABLE:'Overall'
+organizationName :PRINTABLE:'Mastering OpenVPN'
+commonName :PRINTABLE:'Mastering OpenVPN Server'
+emailAddress :IA5STRING:'root@example.org'
+Certificate is to be certified until Sep 28 17:48:20 2024 GMT (3650
+days)
+Write out database with 1 new entries
+Data Base Updated
+=========> Moving certificates and keys to /Library/ssl-admin/active
+for production.
+Can I move signing request (Mastering_OpenVPN_Server.csr) to the
+csr directory for archiving? (y/n): y
+===> Mastering_OpenVPN_Server.csr moved.
+MENU
+```
+
+---
+
+**Подсказка**
+
+Чтобы сэкономить место, меню, напечатанное `ssl-admin`, будет опущено, вместо этого оно будет заменено словом `MENU`.
+
+В предыдущем коде мы использовали сертификат CN с пробелами для демонстрации поведения ssl-admin. Здесь он предупредил, что пробелы будут заменены символом подчеркивания и дал пользователю возможность изменить CN, если это необходимо. Далее мы решили защитить закрытый ключ парольной фразой. Наконец, пользователя спросили, можно ли заархивировать CSR.
+
+Чтобы показать добавленные токены сервера, мы снова запускаем команду `openssl` для вывода сведений о сертификате. Следующий вывод опускает некоторые ключевые детали для краткости:
+
+```
+root@computer:/Library/ssl-admin-> openssl x509 -noout -text -in active/Mastering_OpenVPN_Server.crt
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 1 (0x1)
+        Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C=ZA, ST=Enlightenment, L=Overall, O=Mastering
+OpenVPN, CN=Mastering OpenVPN/emailAddress=root@example.org
+        Validity
+            Not Before: Oct 1 17:48:20 2014 GMT
+            Not After : Sep 28 17:48:20 2024 GMT
+        Subject: C=ZA, ST=Enlightenment, O=Mastering OpenVPN,
+CN=Mastering OpenVPN Server/emailAddress=root@example.org
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+            RSA Public Key: (2048 bit)
+                Modulus (2048 bit):
+                    ...
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Basic Constraints:
+                CA:FALSE
+            Netscape Cert Type:
+                SSL Server
+            Netscape Comment:
+                ssl-admin (OpenSSL) Generated Server Certificate
+            X509v3 Subject Key Identifier:
+
+FB:A8:91:01:E3:51:5D:A7:29:8C:54:63:9F:22:7F:F8:DE:AB:5A:39
+            X509v3 Authority Key Identifier:
+
+keyid:1F:85:DF:90:5C:3F:73:A9:03:B9:F4:E6:C2:2C:A3:27:CF:5B:44:95
+
+DirName:/C=ZA/ST=Enlightenment/L=Overall/O=Mastering
+OpenVPN/CN=Mastering OpenVPN/emailAddress=root@example.org
+                serial:D2:93:32:F0:8E:BC:58:EE
+
+            X509v3 Extended Key Usage:
+                TLS Web Server Authentication
+            X509v3 Key Usage:
+                Digital Signature, Key Encipherment
+    Signature Algorithm: sha1WithRSAEncryption
+```
+
+Обратите внимание, что `x509v3 Extended Key Usage` включает `TLS Web Server Authentication`. Более старый стандарт `nsCertType`, известный как `Netscape Cert Type`, также включен для обратной совместимости. Это не только уместно для OpenVPN, но ssl-admin был написан как общая утилита управления CA x509.
+
+### Клиентские сертификаты OpenVPN
+
+Клиентские сертификаты генерируются так же, как сертификат сервера. Опция `4` в меню создаст запрос на подпись сертификата (CSR) и впоследствии подпишет CSR:
+
+```
+Menu Item: 4
+Please enter certificate owner's name or ID.
+Usual format is first initial-last name (jdoe) or
+hostname of server which will use this certificate.
+All lower case, numbers OK.
+Owner []: client1
+
+File names will use client1.
+Please enter certificate owner's name or ID.
+Usual format is first initial-last name (jdoe) or
+hostname of server which will use this certificate.
+All lower case, numbers OK.
+Owner [client1]:
+Would you like to password protect the private key (y/n): n
+Generating a 2048 bit RSA private key
+...................................................................
+..................................................................+
+++
+.........+++
+writing new private key to 'client1.key'
+-----
+===> Serial Number = 02
+=========> Signing request for client1
+Using configuration from /Library/ssl-admin/openssl.conf
+Enter pass phrase for /Library/ssl-admin/active/ca.key:
+Check that the request matches the signature
+Signature ok
+The Subject's Distinguished Name is as follows
+countryName             :PRINTABLE:'ZA'
+stateOrProvinceName     :PRINTABLE:'Enlightenment'
+localityName            :PRINTABLE:'Overall'
+organizationName        :PRINTABLE:'Mastering OpenVPN'
+commonName              :PRINTABLE:'client1'
+emailAddress            :IA5STRING:'root@example.org'
+Certificate is to be certified until Sep 28 18:05:14 2024 GMT (3650 days)
+
+Write out database with 1 new entries
+Data Base Updated
+=========> Moving certificates and keys to Libraryssl-admin/active
+for production.
+Can I move signing request (client1.csr) to the csr directory for
+archiving? (y/n): ===> client1.csr moved.
+MENU
+```
+
+---
+
+**Подсказка**
+
+В последующих упражнениях будет использоваться до трех клиентских сертификатов, поэтому рекомендуется повторить предыдущие шаги для `client2` и `client3`.
+
+---
+
+Используя двоичный файл `openssl` для проверки сертификата, мы видим, что в сертификате `client1` отсутствуют расширения использования ключей сервера, которые присутствовали в сертификате сервера, который мы создали ранее.
+
+```
+root@computer:Libraryssl-admin-> openssl x509 -noout -text -in active/client1.crt
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number: 2 (0x2)
+        Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C=ZA, ST=Enlightenment, L=Overall, O=Mastering
+OpenVPN, CN=Mastering OpenVPN/emailAddress=root@example.org
+        Validity
+            Not Before: Oct 1 18:05:14 2014 GMT
+            Not After : Sep 28 18:05:14 2024 GMT
+        Subject: C=ZA, ST=Enlightenment, O=Mastering OpenVPN,
+CN=client1/emailAddress=root@example.org
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+            RSA Public Key: (2048 bit)
+                Modulus (2048 bit):
+          ...
+                Exponent: 65537 (0x10001)
+    Signature Algorithm: sha1WithRSAEncryption
+        ...
+```
+
+Этот сертификат, очевидно, имеет более простую структуру, чем сертификат сервера, и параметры использования ключа сервера отсутствуют.
+
+После создания нашего CA, сервера и трех клиентских сертификатов у нас остается следующая структура каталогов:
+
+```
+root@computer:Libraryssl-admin-> ls -lrth
+total 16
+-rw-rw-r-- 1 root wheel 541B Oct 1 12:22 ssl-admin.conf
+drwxr-x--- 2 root wheel 68B Oct 1 12:24 revoked
+-rw-rw---- 1 root wheel 2.5K Oct 1 12:27 openssl.conf
+drwxr-x--- 2 root wheel 102B Oct 1 12:28 packages
+-r--r--r-- 1 root wheel 531B Oct 1 12:43 ssl-admin.conf.sample
+-r--r--r-- 1 root wheel 2.5K Oct 1 12:43 openssl.conf.sample
+drwxr-x--- 2 root wheel 340B Oct 1 13:05 prog
+drwxr-x--- 2 root wheel 340B Oct 1 13:05 csr
+drwxr-x--- 2 root wheel 544B Oct 1 13:05 active
+```
+
+Активный (`active`) каталог содержит все сертификаты и ключи, которые не были отозваны, включая сертификат и ключ CA. Когда сертификаты отозваны, они перемещаются из активного в `revoked` (аннулированные). Чтобы использовать утилиты OpenSSL для отзыва сертификата, сертификат должен присутствовать. Без сертификата возможно проблематичное редактирование индексов вручную в файле `index.txt`. Как следует из его названия, каталог `csr` содержит все CSR. Как правило, их можно безопасно удалить и они хранятся только для устранения неполадок или для восстановления сертификата.
+
+Администратору предлагается оставить управление содержимым хранилища сертификатов утилите. Это относится как к ssl-admin, так и к Easy-RSA.
+
+Каталог `prog` содержит рабочие файлы OpenSSL и последнюю CRL. Не рекомендуется, чтобы эти файлы были повреждены, так как есть вероятность сделать вашу PKI непригодной для использования, если были допущены ошибки.
+
+Наконец, каталог `packages` будет содержать все файлы, которые вы можете распространять среди своих конечных пользователей: не только клиентов OpenVPN, но и администраторов веб-серверов и так далее. Упаковка сертификатов и ключей гарантирует, что конечный пользователь получит все необходимые файлы и они будут в правильном формате.
+
+### Другие преимущества
+
+Утилита ssl-admin имеет некоторые другие функции, которые могут заинтересовать кого-то, кто управляет PKI. Индекс доступен для поиска (опция `8`), который показывает статус данного сертификата. Также возможно отображение текущего CRL (опция `7`). ssl-admin способен упаковывать файлы конфигурации OpenVPN с сертификатами для пользователей как во встроенном формате (опция `i`), так и в отдельные файлы - все они содержатся в zip-файле (опция `z`). Эти два последних варианта будут обсуждаться далее в этой книге, поскольку мы генерируем конфигурации сервера и клиента.
+
+### Несколько CA и CRL
+
+Easy-RSA 3.0 довольно легко поддерживает несколько корневых CA. Создав отдельный каталог CA в корневом каталоге `EASYRSA` и имея разные файлы `vars` для каждого, можно управлять каждым отдельным CA с помощью Easy-RSA.
+
+В настоящее время ssl-admin не поддерживает несколько корневых CA, но поддерживается создание промежуточных CA.
+
+В OpenVPN один экземпляр сервера может поддерживать несколько корневых ЦС, при этом принимаются клиентские подключения, подписанные любым ЦС. Чтобы включить такую ​​поддержку, сертификат CA для каждого авторизованного CA должен быть объединен в один файл, который можно вызвать с помощью опции `--ca` OpenVPN. То же самое можно сделать со списком отзыва сертификатов.
+
+Как правило, не рекомендуется использовать несколько сертификатов CA для одного экземпляра OpenVPN; исключениями могут оказаться миграция сервера или центра сертификации, приобретение компании или организации и т.д.
+
+Ни при каких обстоятельствах не стоит использовать корневой центр сертификации веб-браузера для цепочки сертификатов OpenVPN. Невозможно определить, у кого есть сертификат, и любой, кто попадает в эту иерархию CA, сможет подключиться к вашему экземпляру VPN.
+
+В дальнейшем планируется объединить проекты ssl-admin и Easy-RSA в единый полностью функциональный пакет управления PKI. Для Easy-RSA 4.0 необходимо реализовать эти миграции, используя лучшие функции обеих утилит.
+
+#### Дополнительная безопасность - аппаратные токены, смарт-карты и PKCS #11
+
+В этом разделе мы предоставим некоторую справочную информацию о криптографических аппаратных устройствах. Вы узнаете, как сгенерировать закрытый ключ на аппаратном токене и как скопировать связанный сертификат X.509 в токен.
+
+После этого мы обсудим, как OpenVPN может найти и использовать эту пару сертификат/закрытый ключ для установления VPN-соединения.
+
+##### Исходная информация
+
+Начиная с версии 2.1, OpenVPN поддерживает двухфакторную аутентификацию, предоставляя поддержку **PKCS#11**. Двухфакторная аутентификация основана на идее, что для использования системы (например, VPN) необходимо предоставить две вещи:
+
+* Что-то, что Вы **знаете**, например, пароль
+* Что-то, чем Вы **владеете**, например, смарт-карта или аппаратный токен
+
+PKCS#11 является отраслевым стандартом для связи со смарт-картами или аппаратными токенами, и здесь доступны как открытые, так и коммерческие драйверы. Стандарт PKCS#11 был первоначально опубликован RSA Laboratories и иногда также упоминается как стандарт **cryptoki**, что обозначает **CRYPtographic TOKen Interface**.
+
+Помимо терминов аппаратный токен и смарт-карта, термин **аппаратный модуль безопасности (Hardware Security Module - HSM)** также часто используется для двухфакторной аутентификации. В этом разделе мы в основном будем использовать термин аппаратный токен. Основное различие между аппаратными токенами и смарт-картами заключается в форм-факторе: аппаратный токен обычно поставляется как устройство USB, тогда как смарт-карта выглядит как карта банкомата или кредитная карта. Для использования смарт-карты требуется специальный картридер, который иногда интегрируется в ноутбуки и даже некоторые настольные компьютеры. В некоторых странах выпускаются национальные электронные удостоверения личности, которые обычно классифицируются как смарт-карты.
+
+Чаще всего HSM - это устройство, которое может безопасно хранить криптографические ключи и управлять ими, часто обеспечивая аппаратное ускорение, а также ускоряет шифрование и дешифрование.
+
+Аппаратный токен, смарт-карта или HSM, обычно представляет собой небольшое устройство со встроенным чипом. Этот встроенный чип работает под управлением миниатюрной операционной системы (часто называемой Card OS), которая отвечает за безопасное создание, хранение и управление закрытыми ключами SSL. Большинство аппаратных токенов также способны хранить другую информацию, такую ​​как сертификаты SSL, так что действительная пара сертификат/приватный ключ может надежно храниться на одном устройстве.
+
+##### Поддерживаемые платформы
+
+Основная сложность при использовании двухфакторной аутентификации заключается в поддержке программного обеспечения на разных платформах. Хотя большинство поставщиков аппаратных токенов и смарт-карт предоставляют драйверы операционной системы для Microsoft Windows, в Linux или даже Mac OS X поддерживается гораздо меньше плат и токенов. Обратите внимание, что это не связано с самим OpenVPN: если определенный аппаратный токен поддерживается используемой операционной системой и драйвером PKCS#11, то, как правило, OpenVPN может использовать этот аппаратный токен или смарт-карту.
+
+Для этой книги мы использовали аппаратный токен Aladdin eToken Pro 72K USB. (Aladdin Systems была куплена SafeNet (http://www.safenet.com). Однако, только недавно SafeNet объединился с Gemalto.) Этот аппаратный токен поддерживается только с использованием клиента аутентификации SafeNet с закрытым исходным кодом, который доступен для Microsoft Windows, Mac OS X и Linux.
+
+Более ранние версии этих токенов имели то преимущество, что могли использовать либо платный драйвер с закрытым исходным кодом от SafeNet, либо бесплатный драйвер с открытым исходным кодом из проекта OpenSC (в настоящее время можно найти по адресу https://github.com/OpenSC/OpenSC/wiki). К сожалению, эти старые токены больше не могут быть приобретены, и текущие аппаратные токены от SafeNet используют другую Card ОС, которая не поддерживается OpenSC.
+
+Общий процесс и концепция применимы к большинству аппаратных токенов, которые вы можете использовать. Эти старые устройства использовались просто для тестирования и демонстрации. Многие поставщики используют мобильное приложение на смартфоне пользователя в качестве аппаратного токена. SafeNet также имеет такой продукт: MobilePASS.
+
+Кроме того, драйверы и инструменты из проекта OpenSC не так зрелы, как программное обеспечение от коммерческих поставщиков программного обеспечения.
+
+Другие производители смарт-карт и аппаратных токенов - Aktiv Co и Feitian (с поддержкой открытого исходного кода).
+
+Обратите внимание, что OpenVPN зависит исключительно от работающего драйвера PKCS#11. При выборе аппаратного токена будет важно проверить, поддерживается ли устройство на необходимых платформах, а не будет ли оно работать с самим OpenVPN. Кроме того, обратите внимание, что не требуется (или даже не рекомендуется!) Использовать аппаратный токен на сервере OpenVPN.
+
+##### Инициализация аппаратного токена
+
+Предполагается, что пакет Aladdin `pkiclient` или SafeNet `AuthenticationClient` установлен и аппаратный токен распознается программным обеспечением драйвера. Если eToken уже был инициализирован, пропустите этот шаг.
+
+Сначала откройте окно свойств клиента eToken и нажмите **Initialize eToken**. Это вызовет следующее диалоговое окно:
+
+![](pics/pic3-3.png)
+
+Введите пароль токена и пароль администратора, снимите флажок **Token Password must be changed on first logon** и нажмите **Start**.
+
+Все содержимое токена теперь будет уничтожено, а eToken будет инициализирован с использованием нового токена и паролей администратора.
+
+##### Генерация пары сертификат/приватный ключ
+
+При использовании аппаратного токена процесс генерации пары сертификата и приватного ключа немного отличается от использования инструментов ssl-admin или Easy-RSA. С помощью ssl-admin или Easy-tools закрытый ключ, запрос сертификата и сертификат X.509 генерируются за один шаг. С аппаратным токеном нам сначала нужно сгенерировать приватный ключ на токене.
+
+Используя этот приватный ключ, нам нужно создать CSR. Этот CSR затем подписывается CA, что приводит к сертификату X.509. Этот сертификат затем записывается обратно в токен. Инструменты ssl-admin и Easy-RSA фактически следуют одному и тому же процессу, но они скрывают файл CSR от пользователя.
+
+##### Генерация приватного ключа на токене
+
+Чтобы сгенерировать приватный ключ на eToken, нам нужна команда `pkcs11-tool`, которая является частью пакета OpenSC. Пакет OpenSC доступен для Microsoft Windows, Mac OS X и Linux. Команда `pkcs11-tool` предоставляет интерфейс для аппаратных токенов с использованием драйвера PKCS#11. Драйвером PKCS#11, включенным в программное обеспечение драйвера Aladdin/SafeNet, является `libeTPkcs11.so` (Linux и Mac OS X) или `eTPkcs11.dll` (Windows). Следующая команда была выдана на 64-битной Linux машине, и она генерирует 2048-битный ключ RSA, идентифицированный с помощью метки `movpn` и ID `20141001`. Поскольку мы генерируем приватный ключ, необходимо войти в систему токена:
+
+```
+# pkcs11-tool --module libeTPkcs11.so \
+  --keypairgen --key-type rsa:2048 \
+  --label "movpn" --id 20141001 --login
+Using slot 0 with a present token (0x0)
+Logging in to "Mastering OpenVPN".
+Please enter User PIN: [enter Token password]
+Key pair generated:
+Private Key Object; RSA
+  label: movpn
+  ID: 20141001
+  Usage: decrypt, sign, unwrap
+Public Key Object; RSA 2048 bits
+  label: movpn
+  ID: 20141001
+  Usage: encrypt, verify, wrap
+```
+
+Для генерации 2048-битного ключа на аппаратном токене потребуется некоторое время, в течение которого красный индикатор на аппаратном токене выключен. После этого индикатор снова включится.
+
+Выходные данные вышеприведенной команды говорят нам, что сгенерирован приватный ключ RSA вместе с публичным 2048-битным открытым ключом RSA. Это _не_ то же самое, что сертификат SSL. Чтобы сгенерировать сертификат SSL или X.509, сначала нам нужно сгенерировать запрос сертификата.
+
+##### Генерация запроса на сертификат
+
+Нам нужно использовать движок OpenSSL `engine_pkcs11` для генерации запроса сертификата с использованием приватного ключа из аппаратного токена. Механизм `engine_pkcs11` лучше всего использовать с пользовательским файлом `openssl.cnf`. Сначала мы создаем этот файл:
+
+```
+openssl_conf = openssl_def
+[ openssl_def ]
+engines = engine_section
+[ engine_section ]
+pkcs11 = pkcs11_section
+[ pkcs11_section ]
+engine_id = pkcs11
+dynamic_path = /usr/lib64/openssl/engines/engine_pkcs11.so
+MODULE_PATH = /usr/lib64/libeTPkcs11.so
+init = 0
+[ req ]
+distinguished_name = req_distinguished_name
+[ req_distinguished_name ]
+```
+
+Этот файл был сгенерирован для 64-битной системы CentOS Linux. В других системах пути и имена драйверов будут другими. Обратите внимание, что операторы в файле `openssl.cnf` чувствительны к регистру!
+
+Теперь мы генерируем запрос сертификата с субъектом `/CN = movpn`, используя следующую команду `openssl`:
+
+```
+$ openssl req -engine pkcs11 -keyform engine -key 20141001 \
+  -new -text -out movpn.csr -config openssl.cnf \
+  -subj "/CN=movpn"
+engine "pkcs11" set.
+PKCS#11 token PIN: [enter Token password]
+```
+
+Команда не производит дальнейших выходных данных в случае успеха. Теперь должен появиться файл `movpn.csr`, который должен быть подписан центром сертификации, созданным ранее в этой главе. Предполагается, что подписанный сертификат будет называться `movpn.crt`.
+
+##### Запись сертификата X.509 в токен
+
+OpenVPN ожидает, что сертификат X.509 будет присутствовать на аппаратном токене. Поэтому мы должны сначала записать сертификат X.509 из предыдущего шага в eToken.
+
+Сначала преобразуйте подписанный сертификат в формат DER :
+
+$ openssl x509 -in movpn.crt -outform der -out movpn.der
+
+Далее мы записываем файл DER в токен:
+
+$ pkcs11-tool --module libeTPkcs11.so \ --write-object movpn.der --type cert \
+
+--label movpn --id 20141001 --login
+
+Использование слота 0 с текущим токеном (0x0)
+
+Войдите в «Мастеринг OpenVPN».
+
+Пожалуйста, введите ПИН-код пользователя: [введите пароль токена]
+
+Создан сертификат:
+
+Объект сертификата, тип = сертификат X.509
+
+ярлык: movpn
+
+ID: 20141001
+
+Нам нужно убедиться, что идентификаторы закрытого ключа и сертификата совпадают:
+
+$ pkcs11-tool --module libeTPkcs11.so --login -O Использование слота 0 с текущим токеном (0x0)
+
+Войдите в «Мастеринг OpenVPN».
+
+Пожалуйста, введите ПИН-код пользователя: [введите пароль токена] Объект закрытого ключа; RSA
+
+ярлык: movpn
+
+Я БЫ:
+20141001
+
+Использование:
+расшифровать, подписать, развернуть
+Объект открытого ключа; RSA
+2048 бит
+метка:
+movpn
+
+Я БЫ:
+20141001
+
+Использование:
+шифровать, проверять, оборачивать
+
+Объект сертификата, тип = сертификат X.509
+
+ярлык: movpn
+
+ID: 20141001
+
+Теперь токен готов к использованию с OpenVPN.
+Получение идентификатора аппаратного токена
+
+Чтобы использовать сертификат и закрытый ключ от аппаратного токена, вы должны сначала узнать идентификатор аппаратного токена, который ожидает OpenVPN. Это делается с помощью опции --show-pkcs11-id :
+
+$ openvpn --show-pkcs11-ids usr lib64 / libeTPkcs11.so Следующие объекты доступны для использования.
+
+Каждый объект, показанный ниже, может использоваться как параметр для
+
+Опция --pkcs11-id, пожалуйста, не забудьте использовать одинарную кавычку.
+
+сертификат
+
+DN: CN = movpn
+
+Номер: 01
+
+Серийный идентификатор:
+
+SafeNet \ x20Inc \ x2E / eToken / 00a3659e / Mastering \ x20OpenVPN / 20141001
+
+Сериализованный идентификатор состоит из следующего:
+
+ Имя драйвера PKCS # 11 ( SafeNet Inc )
+
+ Название продукта ( eToken )
+ Серийный номер токена ( 00a3659e )
+ Имя токена ( Мастеринг OpenVPN )
+ Идентификатор сертификата и закрытый ключ на токене ( 20141001 )
+
+Метка сертификата или закрытого ключа не используется, но рекомендуется также синхронизировать их друг с другом.
+Использование аппаратного токена с OpenVPN
+
+Теперь мы наконец готовы использовать аппаратный токен в OpenVPN. Чтобы использовать его, мы заменим строки в файле конфигурации OpenVPN:
+
+cert myclient.crt
+
+ключ myclient.key
+
+С параметрами pkcs11-provider и pkcs11-id :
+
+pkcs11-provider usr lib64 / libeTPkcs11.so
+
+PKCS11-идентификатор
+
+'SafeNet \ x20Inc \ x2E / eToken / 00a3659e / Mastering \ x20OpenVPN / 20141001'
+
+## Резюме
+
+В этой главе мы обсудили инструменты и методы для создания корневого центра сертификации, а также базовых сертификатов сервера и клиента. Кроме того, была рассмотрена концепция PKCS#11, хотя базовая технология постоянно развивается. Теперь у вас должна быть полная PKI и инструменты для ее расширения.
+
+В следующей главе будет представлена ​​настройка маршрутизируемого VPN. Также будет обсуждаться использование сетевого устройства tun и требования уровня 3 для работающего соединения.
