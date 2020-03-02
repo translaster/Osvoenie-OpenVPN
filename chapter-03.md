@@ -922,108 +922,93 @@ PKCS#11 token PIN: [enter Token password]
 
 OpenVPN ожидает, что сертификат X.509 будет присутствовать на аппаратном токене. Поэтому мы должны сначала записать сертификат X.509 из предыдущего шага в eToken.
 
-Сначала преобразуйте подписанный сертификат в формат DER :
+Сначала преобразуйте подписанный сертификат в формат DER:
 
+```
 $ openssl x509 -in movpn.crt -outform der -out movpn.der
+```
 
 Далее мы записываем файл DER в токен:
 
-$ pkcs11-tool --module libeTPkcs11.so \ --write-object movpn.der --type cert \
+```
+$ pkcs11-tool --module libeTPkcs11.so \
+  --write-object movpn.der --type cert \
+  --label movpn --id 20141001 --login
+Using slot 0 with a present token (0x0)
+Logging in to "Mastering OpenVPN".
+Please enter User PIN: [enter Token password]
+Created certificate:
+Certificate Object, type = X.509 cert
+  label: movpn
+  ID: 20141001
+```
 
---label movpn --id 20141001 --login
+Нам нужно убедиться, что идентификаторы приватного ключа и сертификата совпадают:
 
-Использование слота 0 с текущим токеном (0x0)
-
-Войдите в «Мастеринг OpenVPN».
-
-Пожалуйста, введите ПИН-код пользователя: [введите пароль токена]
-
-Создан сертификат:
-
-Объект сертификата, тип = сертификат X.509
-
-ярлык: movpn
-
+```
+$ pkcs11-tool --module libeTPkcs11.so --login -O
+Using slot 0 with a present token (0x0)
+Logging in to "Mastering OpenVPN".
+Please enter User PIN: [enter Token password]
+Private Key Object; RSA
+label: movpn
 ID: 20141001
-
-Нам нужно убедиться, что идентификаторы закрытого ключа и сертификата совпадают:
-
-$ pkcs11-tool --module libeTPkcs11.so --login -O Использование слота 0 с текущим токеном (0x0)
-
-Войдите в «Мастеринг OpenVPN».
-
-Пожалуйста, введите ПИН-код пользователя: [введите пароль токена] Объект закрытого ключа; RSA
-
-ярлык: movpn
-
-Я БЫ:
-20141001
-
-Использование:
-расшифровать, подписать, развернуть
-Объект открытого ключа; RSA
-2048 бит
-метка:
-movpn
-
-Я БЫ:
-20141001
-
-Использование:
-шифровать, проверять, оборачивать
-
-Объект сертификата, тип = сертификат X.509
-
-ярлык: movpn
-
+Usage: decrypt, sign, unwrap
+Public Key Object; RSA 2048 bits
+label: movpn
 ID: 20141001
+Usage: encrypt, verify, wrap
+Certificate Object, type = X.509 cert
+label: movpn
+ID: 20141001
+```
 
 Теперь токен готов к использованию с OpenVPN.
-Получение идентификатора аппаратного токена
 
-Чтобы использовать сертификат и закрытый ключ от аппаратного токена, вы должны сначала узнать идентификатор аппаратного токена, который ожидает OpenVPN. Это делается с помощью опции --show-pkcs11-id :
+##### Получение идентификатора аппаратного токена
 
-$ openvpn --show-pkcs11-ids usr lib64 / libeTPkcs11.so Следующие объекты доступны для использования.
+Чтобы использовать сертификат и приватный ключ от аппаратного токена, вы должны сначала узнать идентификатор аппаратного токена, который ожидает OpenVPN. Это делается с помощью опции `--show-pkcs11-id`:
 
-Каждый объект, показанный ниже, может использоваться как параметр для
+```
+$ openvpn --show-pkcs11-ids usrlib64/libeTPkcs11.so
+The following objects are available for use.
+Each object shown below may be used as parameter to
+--pkcs11-id option please remember to use single quote mark.
 
-Опция --pkcs11-id, пожалуйста, не забудьте использовать одинарную кавычку.
-
-сертификат
-
-DN: CN = movpn
-
-Номер: 01
-
-Серийный идентификатор:
-
-SafeNet \ x20Inc \ x2E / eToken / 00a3659e / Mastering \ x20OpenVPN / 20141001
+Certificate
+       DN:              CN=movpn
+       Serial:          01
+       Serialized id:
+SafeNet\x20Inc\x2E/eToken/00a3659e/Mastering\x20OpenVPN/20141001
+```
 
 Сериализованный идентификатор состоит из следующего:
 
- Имя драйвера PKCS # 11 ( SafeNet Inc )
+* Имя драйвера PKCS#11 (`SafeNet Inc`)
+* Название продукта (`eToken`)
+* Серийный номер токена (`00a3659e`)
+* Имя токена (`Mastering OpenVPN`)
+* Идентификатор сертификата и приватный ключ на токене (`20141001`)
 
- Название продукта ( eToken )
- Серийный номер токена ( 00a3659e )
- Имя токена ( Мастеринг OpenVPN )
- Идентификатор сертификата и закрытый ключ на токене ( 20141001 )
+Метка сертификата или приватного ключа не используется, но рекомендуется также синхронизировать их друг с другом.
 
-Метка сертификата или закрытого ключа не используется, но рекомендуется также синхронизировать их друг с другом.
-Использование аппаратного токена с OpenVPN
+##### Использование аппаратного токена с OpenVPN
 
 Теперь мы наконец готовы использовать аппаратный токен в OpenVPN. Чтобы использовать его, мы заменим строки в файле конфигурации OpenVPN:
 
+```
 cert myclient.crt
 
-ключ myclient.key
+key myclient.key
+```
 
-С параметрами pkcs11-provider и pkcs11-id :
+Параметрами `pkcs11-provider` и `pkcs11-id`:
 
-pkcs11-provider usr lib64 / libeTPkcs11.so
-
-PKCS11-идентификатор
-
-'SafeNet \ x20Inc \ x2E / eToken / 00a3659e / Mastering \ x20OpenVPN / 20141001'
+```
+pkcs11-providers usrlib64/libeTPkcs11.so
+pkcs11-id
+'SafeNet\x20Inc\x2E/eToken/00a3659e/Mastering\x20OpenVPN/20141001'
+```
 
 ## Резюме
 
