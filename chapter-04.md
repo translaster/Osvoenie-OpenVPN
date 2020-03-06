@@ -370,3 +370,270 @@ $ openssl x509 -text -noout -in server.crt | \
 Это не позволяет злонамеренному клиенту настроить мошеннический сервер OpenVPN для привлечения подключений от других пользователей VPN.
 
 Также можно проверить наличие атрибута `Netscape Cert Type`. Поскольку это атрибут сертификата сервера, клиент OpenVPN должен проверить этот атрибут при подключении. Для этого можно использовать опцию `ns-cert-type server`. Предпочтительно использовать параметр `remote-cert-tls`.
+
+## Основные конфигурационные файлы производственного уровня
+
+Мы расширим предыдущие файлы конфигурации клиента и сервера, чтобы использовать только что созданный ключ `tls-auth`. Мы сделаем это, добавив строку в файл конфигурации `movpn-04-01-server.conf`, а также второй параметр повышения безопасности:
+
+```
+proto udp
+port 1194
+dev tun
+server 10.200.0.0 255.255.255.0
+topology subnet
+persist-key
+persist-tun
+keepalive 10 60
+
+remote-cert-tls client
+tls-auth /etc/openvpn/movpn/ta.key 0
+dh /etc/openvpn/movpn/dh2048.pem
+ca /etc/openvpn/movpn/movpn-ca.crt
+cert /etc/openvpn/movpn/server.crt
+key /etc/openvpn/movpn/server.key
+
+user nobody
+group nobody
+
+verb 3
+daemon
+log-append /var/log/openvpn.log
+```
+
+---
+
+**Заметка**
+
+Обратите внимание, что порядок операторов в этом файле конфигурации является случайным. Строки `remote-cert-tls` и `tls-auth` могут быть добавлены в любом месте файла.
+
+---
+
+Этот файл конфигурации сервера является основным файлом конфигурации сервера, который мы будем использовать в этой и других главах. Сохраните его как `basic-udp-server.conf`, чтобы мы могли использовать его позже.
+
+Мы добавляем две одинаковые строки в файл конфигурации клиента `movpn-04-01-client.conf`:
+
+```
+client
+
+proto udp
+remote openvpnserver.example.com
+port 1194
+dev tun
+nobind
+
+remote-cert-tls server
+tls-auth /etc/openvpn/movpn/ta.key 1
+ca /etc/openvpn/movpn/movpn-ca.crt
+cert /etc/openvpn/movpn/client1.crt
+key /etc/openvpn/movpn/client1.key
+```
+
+Сохраните его как `basic-udp-client.conf`.
+
+Второй параметр опции `tls-auth` - это так называемое направление ключа. OpenVPN поддерживает использование ключа _направления_, то есть разные ключи используются для входящих и исходящих данных. Это еще больше повышает безопасность. Флаг `direction` должен быть установлен в `0` на одном конце и `1` на другом. В режиме клиент/сервер это означает, что сервер имеет параметр `0` для направления, а для всех клиентов параметр направления установлен в `1`.
+
+Когда мы запускаем сервер OpenVPN, мы видим, что канал управления TLS теперь защищен статическим ключом:
+
+```
+[root@server]# openvpn --config basic-udp-server.conf --suppresstimestamps
+OpenVPN 2.3.2 x86_64-redhat-linux-gnu [SSL (OpenSSL)] [LZO] [EPOLL]
+[PKCS11] [eurephia] [MH] [IPv6] built on Sep 12 2013
+Enter Private Key Password:
+WARNING: this configuration may cache passwords in memory -- use
+the auth-nocache option to prevent this
+Control Channel Authentication: using ‘/etc/openvpn/movpn/ta.key’ as
+a OpenVPN static key file
+TUN/TAP device tun0 opened
+do_ifconfig, tt->ipv6=0, tt->did_ifconfig_ipv6_setup=0
+sbinip link set dev tun0 up mtu 1500
+sbinip addr add dev tun0 10.200.0.1/24 broadcast 10.200.0.255
+GID set to nobody
+UID set to nobody
+UDPv4 link local (bound): [undef]
+UDPv4 link remote: [undef]
+Initialization Sequence Completed
+```
+
+Аналогично, когда мы запускаем клиент OpenVPN, мы видим:
+
+```
+[root@client]# openvpn --config basic-udp-client.conf --suppresstimestamps
+OpenVPN 2.3.2 x86_64-redhat-linux-gnu [SSL (OpenSSL)] [LZO] [EPOLL]
+[PKCS11] [eurephia] [MH] [IPv6] built on Sep 12 2013
+Control Channel Authentication: using ‘/etc/openvpn/movpn/ta.key’ as
+a OpenVPN static key file
+UDPv4 link local: [undef]
+UDPv4 link remote: [AF_INET]openvpnserver:1194
+[Mastering OpenVPN Server] Peer Connection Initiated with
+[AF_INET]openvpnserver:1194
+TUN/TAP device tun0 opened
+do_ifconfig, tt->ipv6=0, tt->did_ifconfig_ipv6_setup=0
+sbinip link set dev tun0 up mtu 1500
+sbinip addr add dev tun0 10.200.0.2/24 broadcast 10.200.0.255
+Initialization Sequence Completed
+```
+
+## Конфигурация на основе TCP
+
+Протокол по умолчанию, используемый OpenVPN, является протоколом UDP. Создание версий на основе TCP на основе созданных ранее файлов конфигурации очень простое. В файлах конфигурации клиента и сервера измените строку `proto udp` на `proto tcp`. Весь файл конфигурации сервера на основе TCP указан здесь:
+
+```
+proto tcp
+port 1194
+dev tun
+server 10.200.0.0 255.255.255.0
+topology subnet
+persist-key
+persist-tun
+keepalive 10 60
+
+remote-cert-tls client
+tls-auth /etc/openvpn/movpn/ta.key 0
+dh /etc/openvpn/movpn/dh2048.pem
+ca /etc/openvpn/movpn/movpn-ca.crt
+cert /etc/openvpn/movpn/server.crt
+key /etc/openvpn/movpn/server.key
+
+user nobody
+group nobody
+
+verb 3
+daemon
+log-append /var/log/openvpn.log
+```
+
+Сохраните этот файл конфигурации как `basic-tcp-server.conf`.
+
+Аналогично, для файла конфигурации клиента:
+
+```
+client
+proto tcp
+remote openvpnserver.example.com
+port 1194
+dev tun
+nobind
+
+remote-cert-tls server
+tls-auth /etc/openvpn/movpn/ta.key 1
+ca /etc/openvpn/movpn/movpn-ca.crt
+cert /etc/openvpn/movpn/client1.crt
+key /etc/openvpn/movpn/client1.key
+```
+
+Сохраните его как `basic-tcp-client.conf`.
+
+## Конфигурационные файлы для Windows
+
+Базовые файлы конфигурации для платформы Windows немного отличаются от файлов для платформ Linux/Unix или Mac OS. На платформе Windows используется оболочка `Openvpn-GUI.exe`, которая предполагает, что все файлы конфигурации хранятся в каталоге `C:\Program Files\OpenVPN\config` или его подкаталогах. Название каталога `Program Files` может отличаться для других языков. На всех языках переменная среды Windows `%PROGRAMFILES%` будет указывать на правильное расположение.
+
+Таким образом, базовые файлы конфигурации UDP и TCP на самом деле немного короче. Создайте файл конфигурации клиента UDP:
+
+```
+client
+proto udp
+remote openvpnserver.example.com
+port 1194
+dev tun
+nobind
+
+remote-cert-tls server
+tls-auth  ta.key 1
+ca        movpn-ca.crt
+cert      client1.crt
+key       client1.key
+```
+
+Сохраните его как `basic-udp-client.ovpn`, чтобы мы могли использовать его позже в этой книге.
+
+Аналогичным образом создайте конфигурацию клиента:
+
+```
+client
+proto tcp
+remote openvpnserver.example.com
+port 1194
+dev tun
+nobind
+remote-cert-tls server
+tls-auth  ta.key 1
+ca        movpn-ca.crt
+cert      client1.crt
+key       client1.key
+```
+
+Сохраните его как `basic-tcp-client.ovpn`.
+
+## Маршрутизация и маршрутизация на стороне сервера
+
+VPN действительно полезен только тогда, когда клиенты VPN имеют доступ к ресурсам на стороне сервера. Для доступа к этим ресурсам в большинстве случаев необходима маршрутизация. OpenVPN имеет много опций для автоматической настройки и удаления дополнительных маршрутов, когда клиент подключается или отключается.
+
+Следует отметить, что большинство проблем с устранением неполадок OpenVPN связано с маршрутизацией. Настройка VPN-соединения - это одно, а правильная передача сетевого трафика - это другое. Это часто имеет мало общего с самим OpenVPN, но больше связано с таблицами маршрутизации и правилами брандмауэра на стороне клиента и сервера.
+
+Наиболее распространенная схема доступа к ресурсам в серверной сети изображена здесь:
+
+![](pics/pic4-2.png)
+
+Локальная сеть на стороне сервера: **192.168.122.0/24**. Ресурсы, к которым VPN-клиенты должны получить доступ, находятся в этой подсети. Таким образом, сервер должен проинструктировать VPN-клиентов, что необходимо установить дополнительный маршрут. Это делается с помощью опции `push`, где конфигурация маршрута передается клиенту. Этого также можно достичь, добавив маршрут к самому файлу конфигурации клиента, но это плохо масштабируется. Это связано с тем, что для каждого нового сетевого маршрута на стороне сервера необходимо обновить все файлы конфигурации клиента.
+
+Мы начнем с файла `basic-udp-server.conf` и добавим одну строку:
+
+```
+proto udp
+port 1194
+dev tun
+server 10.200.0.0 255.255.255.0
+topology subnet
+persist-key
+persist-tun
+keepalive 10 60
+
+remote-cert-tls client
+tls-auth /etc/openvpn/movpn/ta.key 0
+dh /etc/openvpn/movpn/dh2048.pem
+ca /etc/openvpn/movpn/movpn-ca.crt
+cert /etc/openvpn/movpn/server.crt
+key /etc/openvpn/movpn/server.key
+
+user nobody
+group nobody
+
+verb 3
+daemon
+log-append /var/log/openvpn.log
+
+push “route 192.168.122.0 255.255.255.0”
+```
+
+Мы сохраняем его как `movpn-04-03-server.conf` и запускаем сервер OpenVPN, используя этот файл конфигурации. На этот раз мы используем Windows 7 64-разрядную версию Professional в качестве клиента OpenVPN, на котором установлена ​​версия OpenVPN 2.3.4-I004 для X86_64. Скопируйте следующие файлы на компьютер с Windows:
+* basic-udp-client.ovpn
+* movpn-ca.crt
+* client1.crt
+* client1.key
+
+Возьмите и поместите их в `C:\Program Files\OpenVPN\config` (или `%PROGRAMFILES%\config`).
+
+Запустите приложение OpenVPN GUI, выберите конфигурацию `basic-udp-client` и нажмите **Connect**:
+
+![](pics/pic4-3.png)
+
+Как только соединение успешно установлено - значок OpenVPN GUI становится зеленым и информация о соединении отображается при наведении курсора на значок:
+
+![](pics/pic4-4.png)
+
+Теперь мы можем проверить, работает ли VPN-соединение с сервером, открыв командную оболочку и выполнив команду `ping` на сервере:
+
+![](pics/pic4-5.png)
+
+После того, как мы проверим что сервера OpenVPN доступен, мы должны убедиться, что сервер OpenVPN пересылает IP-трафик и нам необходимо добавить дополнительный маршрут на шлюзе на стороне сервера, чтобы гарантировать правильное перенаправление VPN-трафика обратно через сервер VPN. Без этого маршрута машины в серверной сети теперь будут знать, откуда поступает трафик VPN с IP-адресами `10.200.0.0/24` и, скорее всего, неправильно маршрутизируют или отбрасывают пакеты:
+
+```
+[root@server]# sysctl -w net.ipv4.ip_forward=1
+[router]# ip route add 10.200.0.0/24 via 192.168.122.1
+```
+
+Теперь мы проверим таблицу маршрутизации на стороне клиента и проверим можем ли мы подключиться к компьютеру в локальной сети на стороне сервера:
+
+![](pics/pic4-6.png)
+
+Первая часть выходных данных показывает, что несколько маршрутов для подсети VPN `10.200.0.0/24` были добавлены к таблицам маршрутизации, включая маршрут для `pushed` подсети `192.168.122.0/24`. Обратите внимание на последний столбец в выходных данных, который показывает метрику маршрута. Windows вычисляет метрику (в данном случае 286), но она может быть отменена с помощью правильных операторов маршрута. Маршрут, добавленный с помощью `push route 192.168.122.0 255.255.255.0`, имеет более низкую метрику, поскольку была указана метрика OpenVPN по умолчанию 30.
