@@ -482,7 +482,7 @@ VPN-туннель работает так же, как и раньше, но т
 --dev tun \
 --secret secret.key 0\
 --route 192.168.4.0 255.255.255.0 \
---daemon --log varlog/movpn-02-server.log
+--daemon --log /var/log/movpn-02-server.log
 ```
 
 На стороне клиента код выглядит следующим образом:
@@ -493,7 +493,7 @@ VPN-туннель работает так же, как и раньше, но т
 --dev tun \
 --secret secret.key 1\
 --remote openvpnserver.example.com \
---daemon --log varlog/movpn-02-client.log
+--daemon --log /var/log/movpn-02-client.log
 ```
 
 На стороне сервера был добавлен оператор _route_, чтобы сообщить OpenVPN, что сеть **192.168.4.0/24** находится на другом конце туннеля. OpenVPN сам по себе мало что с этим сделает, но выдаст соответствующую системную команду `/sbin/route` или `/sbin/ip route` для настройки таблиц системной маршрутизации. Вместо использования оператора OpenVPN `--route` мы также можем использовать следующую команду:
@@ -1120,7 +1120,7 @@ dev tap0
 secret secret.key
 verb 3
 daemon
-log-append varlog/openvpn.log
+log-append /var/log/openvpn.log
 ```
 
 ---
