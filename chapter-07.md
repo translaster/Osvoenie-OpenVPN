@@ -289,7 +289,7 @@ exit 0
 
 Когда `client1` подключается, опция отключения будет передана на сервер, предотвращая продолжение соединения. Могут быть переданы другие параметры, такие как `ifconfig` для статических IP-адресов, передача различных маршрутов и многое другое.
 
-##### Пример 1 - выбранные клиентом маршруты
+###### Пример 1 - выбранные клиентом маршруты
 
 Рассмотрим сетевого администратора с двумя центрами обработки данных, каждый со своей парой серверов OpenVPN. Был случай, когда необходимо было работать с одним центром обработки данных, при этом гарантируя, что если другой стал недоступен, службы и системы все еще были бы доступны в работающем центре обработки данных.
 
@@ -346,7 +346,7 @@ exit 0
 
 Хотя это и не идеально и на это можно нападать разными способами, это позволило нам создать одну конфигурацию OpenVPN для каждого из системных администраторов и обеспечить им некоторый уровень динамической маршрутизации в зависимости от их задач.
 
-##### Пример 2 - отслеживать статистику клиентских подключений
+###### Пример 2 - отслеживать статистику клиентских подключений
 
 Используя скрипты `client-connect` и `client-disconnect` возможно создавать клиентские записи статистики подключения к базе данных или в другом месте. В этом примере мы просто хотим отслеживать, когда пользователи подключаются и сколько времени они проводят, подключившись к VPN-серверу.
 
@@ -383,156 +383,411 @@ ecrist@example:~-> sqlite3 movpn.sqlite3 < file.schema
 
 ```
 #!/bin/sh
-DBFILE="varopenvpn/movpn.sqlite3"
-DBBUFFER="varopenvpn/buffer.sql"
+
+DBFILE="/var/openvpn/movpn.sqlite3"
+DBBUFFER="/var/openvpn/buffer.sql"
+
 db_query (){
-SQL="$1"
-usrlocal/bin/sqlite3 $DBFILE "$SQL"
-if [ $? -ne 0 ];
-then
-# There was an error, write the SQL out to a buffer file
-echo "$SQL" | tr -d "\t" | tr -d "\n" | tee -a $DBBUFFER
-echo ";" | tee -a $DBBUFFER
-fi
-} l
-ogger "OpenVPN Type: $script_type"
+  SQL="$1"
+  /usr/local/bin/sqlite3 $DBFILE "$SQL"
+  if [ $? -ne 0 ];
+  then
+    # There was an error, write the SQL out to a buffer file
+    echo "$SQL" | tr -d "\t" | tr -d "\n" | tee -a $DBBUFFER
+    echo ";" | tee -a $DBBUFFER
+  fi
+}
+logger "OpenVPN Type: $script_type"
 case "$script_type" in
-client-connect)
-# do record insert
-logger "OpenVPN: client-connect"
-SQL="
-INSERT INTO vpn_session (
-cn, connect_time, vpn_ip4,
-vpn_ip6, remote_ip4
-) VALUES (
-'$common_name', '$time_unix',
-'$ifconfig_pool_remote_ip',
-'$ipconfig_ipv6_remote',
-'$untrusted_ip'
-)"
-db_query "$SQL"
-;;
-client-disconnect)
-# update the record, if it's found
-logger "OpenVPN: client-disconnect"
-SQL="
-UPDATE
-vpn_session
-SET
-disconnect_time = '$time_unix'
-WHERE
-cn = '$common_name'
-AND disconnect_time IS NULL
-AND session_id = (
-SELECT MAX(session_id)
-FROM vpn_session
-WHERE cn = '$common_name'
-)
-"d
-b_query "$SQL"
-;;
+    client-connect)
+      # do record insert
+      logger "OpenVPN: client-connect"
+      SQL="
+        INSERT INTO vpn_session (
+          cn, connect_time, vpn_ip4,
+          vpn_ip6, remote_ip4
+        ) VALUES (
+          '$common_name', '$time_unix',
+          '$ifconfig_pool_remote_ip',
+          '$ipconfig_ipv6_remote',
+          '$untrusted_ip'
+        )"
+      db_query "$SQL"
+      ;;
+    client-disconnect)
+      # update the record, if it's found
+      logger "OpenVPN: client-disconnect"
+      SQL="
+        UPDATE
+          vpn_session
+        SET
+          disconnect_time = '$time_unix'
+        WHERE
+          cn = '$common_name'
+          AND disconnect_time IS NULL
+          AND session_id = (
+            SELECT MAX(session_id)
+            FROM vpn_session
+            WHERE cn = '$common_name'
+            )
+      "
+      db_query "$SQL"
+      ;;
 esac
+
 exit 0
 ```
 
-<!---
-
 Этот скрипт использует функцию переключения регистра, чтобы определить тип сценария и вести себя соответственно. При новом клиентском соединении он обновит таблицу базы данных с информацией о соединении и обновит эту запись базы данных, когда клиент отключится. Схема, которую мы здесь использовали, довольно проста и может быть легко расширена для поддержки отслеживания использования полосы пропускания и нескольких клиентских подключений.
 
-Используя команду sqlite3 , мы можем получить три самые последние записи в базе данных:
+Используя команду `sqlite3`, мы можем получить три самые последние записи в базе данных:
 
-ecrist @ пример: локальный usr и т. д. openvpn-> sqlite3
+```
+ecrist@example:/usr/local/etc/openvpn-> sqlite3
+/var/openvpn/movpn.sqlite3 "SELECT * FROM vpn_session ORDER BY session_id DESC LIMIT 3"
+10|client1|1426430834||10.200.0.2||CLIENT_IP|
+9|client1|1426430759|1426430759|10.200.0.2||CLIENT_IP|0
+8|client1|1426429888|1426429888|10.200.0.2||CLIENT_IP|0
+```
 
-var openvpn / movpn.sqlite3 "SELECT * FROM vpn_session ORDER BY
+###### Пример 3 - отключить пользователя через X минут
 
-session_id DESC LIMIT 3 "
-
-10 | client1 | 1426430834 || 10.200.0.2 || CLIENT_IP |
-
-9 | client1 | 1426430759 | 1426430759 | 10.200.0.2 || CLIENT_IP | 0
-
-8 | client1 | 1426429888 | 1426429888 | 10.200.0.2 || CLIENT_IP | 0
-
-Пример 3 - отключить пользователя через X минут
-
-Есть несколько способов справиться с этим сценарием. Если вы предоставляете пользователям короткий доступ, скажем, 30 минут за раз, сценарий подключения клиента с простым режимом ожидания может выполнить отключение и блокировку учетной записи. Допустим, вы продаете короткие одноразовые сеансы VPN продолжительностью до 30 минут. В этом случае после того, как пользователь достиг 30 минут использования, задание cron отключит пользователя и заблокирует его учетную запись, используя запись в каталоге CCD .
+Есть несколько способов справиться с этим сценарием. Если вы предоставляете пользователям короткий доступ, скажем, 30 минут за раз, сценарий `client-connect` с простым режимом ожидания может выполнить отключение и блокировку учетной записи. Допустим, вы продаете короткие одноразовые сеансы VPN продолжительностью до 30 минут. В этом случае после того, как пользователь достиг 30 минут использования, задание `cron` отключит пользователя и заблокирует его учетную запись, используя запись в каталоге CCD.
 
 Этот пример будет основываться на предыдущем примере с использованием базы данных SQLite, которую мы создали для отслеживания используемого времени. Наш скрипт будет иметь несколько задач:
 
- Рассчитать время подключения VPN
+* Рассчитать время подключения VPN
+* Блокировка пользователя по истечении выделенного времени подключения
+* Отключить клиента, если в он данный момент подключен
 
- Блокировка пользователя по истечении выделенного времени подключения
- Отключить клиент, если в данный момент подключен
+Для выполнения предыдущих задач мы напишем небольшой скрипт оболочки, который будет вызываться демоном `cron`. Здесь мы проверим информацию о соединении, запросив порт управления и базу данных, которую мы создали в предыдущем примере. Альтернативой запросу порта управления может быть опрос файла журнала состояния OpenVPN и работа с этими данными в режиме реального времени. Один серьезный недостаток для опроса интерфейса управления заключается в том, что он является однопоточным и допускает только одно соединение за раз. Если скрипт зависает или кто-то подключен к интерфейсу, последовательные опросы также будут зависать. Код выглядит следующим образом:
 
-Для выполнения предыдущих задач мы напишем небольшой скрипт оболочки, который будет вызываться демоном cron . Здесь мы проверим информацию о соединении, запросив порт управления и базу данных, которую мы создали в предыдущем примере. Альтернативой запросу порта управления может быть опрос файла журнала состояния OpenVPN и работа с этими данными в режиме реального времени. Один серьезный недостаток для опроса интерфейса управления заключается в том, что он является однопоточным и допускает только одно соединение за раз. Если скрипт зависает или кто-то подключен к интерфейсу, последовательные опросы также будут зависать. Код выглядит следующим образом:
+```
+#!/bin/sh
+##
+Determines if user ($1) has been connected more than $2 seconds
 
-#! / Bin / ш
+if [ $# -lt 2 ];
+then
+  echo "usage: $0 <user> <time_in_seconds>"
+  exit 1
+fi
 
-#
+USER=$1
+TO=$2
 
-# Определяет, был ли пользователь ($ 1) подключен более $ 2 секунд
+# DB seconds
 
-if [$ # -lt 2];
+SQL="SELECT SUM(connection_time) FROM vpn_session WHERE cn='$USER'"
+DBTIME='/usr/local/bin/sqlite3 /var/openvpn/movpn.sqlite3 "$SQL"'
 
-тогда
+if [ "$DBTIME" = "" ];
+then
+  DBTIME=0
+fi
 
-echo "использование: $ 0 <пользователь> <time_in_seconds>"
+# Check management port
+CTIME='echo "status 2" | nc -N localhost 1194 | grep -E
+"CLIENT_LIST.*$USER" | cut -f8 -d,'
+if [ "$CTIME" != "" ];
+then
+  # we have an active connection
+  D='date +"%s"'
+  CTIME='expr "$D - $CTIME"'
+else
+  CTIME=0
+fi
 
-выход 1
+UTIME='expr $DBTIME + $CTIME'
+if [ $UTIME -gt $TO ];
+then
+  logger "Disconnecting $USER, activity time exceeded ($UTIME/$TO)."
+  echo "disable" >> /usr/local/etc/openvpn/ccd/$USER
+  echo "kill $USER" | nc localhost 1194
+fi
+```
 
-фи
+Теперь, когда у нас есть скрипт, мы можем вызвать его:
 
-USER = $ 1
+```
+root @ example:~-> timeout.sh client1 1800
+```
 
-TO = $ 2
+Он подсчитает сколько секунд `client1` был подключен к VPN. Если время превышает `1800` (или любое другое число, которое вы там указали), оно отключит эту конфигурацию через директорию `client-config-directory` и уничтожит все активные сеансы, используя интерфейс управления.
 
-# БД секунд
+---
 
-SQL = "ВЫБЕРИТЕ СУММУ (время соединения) ОТ vpn_session ГДЕ cn = '$ USER'" DBTIME = " usr local / bin / sqlite3 var openvpn / movpn.sqlite3" $ SQL "'
+**Подсказка**
 
-if ["$ DBTIME" = ""];
+Интерфейс управления OpenVPN допускает только одно соединение за раз. Убедитесь, что ваш скрипт правильно обрабатывает это ограничение.
 
-тогда
+---
 
-DBTIME = 0
+### Примеры клиентских скриптов
 
-фи
+Многие сторонние клиентские пакеты OpenVPN интенсивно используют сценарии на стороне клиента для обеспечения надежной интеграции с различными операционными системами. Tunnelblick, первоначально написанный Angelo Laub, использует сценарии на стороне клиента для интеграции настроек DNS сервера OpenVPN с операционной системой Mac OS X.
 
-# Проверьте порт управления
+Моникер "client" для сценариев на стороне клиента может быть немного неправильным. Во многих случаях клиент OpenVPN может фактически быть другим сервером. Возможно, у вас есть несколько разрозненных офисов и вы используете OpenVPN для их подключения. Клиентские сценарии могут использоваться для запуска демона, процесса резервного копирования или других служб, для которых локальная сеть зависит от сеанса OpenVPN.
 
-CTIME = 'echo "status 2" | nc -N localhost 1194 | grep -E "CLIENT_LIST. * $ USER" | cut -f8 -d, 'if ["$ CTIME"! = ""];
+Клиентские сценарии написаны аналогично серверным и имеют почти идентичный список доступных переменных среды.
 
-тогда
+#### Пример 4 - монтирование общего ресурса NFS
 
- у нас есть активное соединение D = 'date + "% s"'
+Обычной задачей подключения клиента является подключение удаленных общих ресурсов после подключения к корпоративной сети. Давайте рассмотрим веб-разработчика, которому необходимо подключить веб-каталог после подключения к VPN.
 
-CTIME = 'expr "$ D - $ CTIME"'
+Первая задача состоит в том, чтобы написать на стороне клиента сценарии `up` и `down`. Сценарий `up` соединит сетевой ресурс, а скрипт `down` удалит его. Сценарий `up`  этом случае довольно прост - монтирование директории `webroot` через NFS от 10.200.0.53. Этот пример написан для системы Mac OS X, использующей `osascript` для предоставления графических всплывающих окон, чтобы уведомить пользователя, когда смонтирован общий ресурс NFS. Код выглядит следующим образом:
 
-еще
+```
+#!/bin/sh
 
-CTIME = 0
+# make webroot in home if it doesn't exist
+mkdir -p /remote_shares/webroot
+if [ $? -eq 0 ];
+then
+        mount 192.168.19.53:/webroot /remote_shares/webroot
+        if [ $? -eq 0 ];
+        then
+                osascript -e 'tell app "System Events" to display dialog "~/remote_shares/webroot is mounted"'
+        else
+                osascript -e 'tell app "System Events" to display dialog "Unable to mount webroot directory."'
+        fi
+else
+        osascript -e 'tell app "System Events" to display dialog "Unable to create remote share path."'
+fi
+```
 
-фи
+Следующий скрипт довольно прост:
 
-UTIME = 'expr $ DBTIME + $ CTIME'
+```
+#!/bin/sh
+umount -f ~/remote_shares/webroot
+```
 
-if [$ UTIME -gt $ TO];
+После создания сценариев необходимо обновить конфигурацию клиента, чтобы разрешить внешние сценарии, добавив директиву `script-security` вместе с директивой `up`:
 
-тогда
+```
+script-security 2
+up /путь/к/скриптуt/up.sh
+```
 
-logger «Отключение $ USER, время активности превышено ($ UTIME / $ TO)».
+**Подсказка**
 
-echo "отключить" >> usr local etc openvpn / ccd / $ USER cho "kill $ USER" | nc localhost 1194
+Tunnelblick выполняет довольно много собственных сценариев и переопределяет оба вызова сценариев - `up` и `down`. Чтобы обойти это, следуйте инструкциям для именования и расположения сценариев. Эти инструкции можно найти по адресу https://tunnelblick.net/cUsingScripts.html.
 
-фи
+---
 
-Теперь, когда у нас есть скрипт, мы можем назвать его:
+#### Пример 5 - использование всех скриптов одновременно
 
-root @ example: ~ -> timeout.sh client1 1800
-Это подсчитает, сколько секунд client1 был подключен к VPN. Если время превышает 1800 (или любое другое число, которое вы там указали), оно отключит эту конфигурацию через директорию client-config-directory и уничтожит все активные сеансы, используя интерфейс управления.
+В следующем примере мы будем использовать все сценарии на стороне клиента и сервера одновременно. Хотя это не похоже на ситуацию в реальной жизни, оно дает некоторое хорошее представление о порядке выполнения сценариев, а также об аргументах и ​​переменных среды для каждого из сценариев.
 
-Чаевые
+Мы начнем со следующего файла конфигурации сервера:
 
-Интерфейс управления OpenVPN допускает только одно соединение за раз.
+```
+tls-server
+proto udp
+port 1194
+dev tun
 
-Убедитесь, что ваш скрипт правильно обрабатывает это ограничение.
+server 10.200.0.0 255.255.255.0
+server-ipv6 FD00::200:0/112
+
+ca        /etc/openvpn/movpn/movpn-ca.crt
+cert      /etc/openvpn/movpn/server.crt
+key       /etc/openvpn/movpn/server.key
+dh        /etc/openvpn/movpn/dh2048.pem
+tls-auth  /etc/openvpn/movpn/ta.key 0
+
+persist-key
+persist-tun
+keepalive 10 60
+
+topology subnet
+
+user nobody
+group nobody
+
+daemon
+log-append /var/log/openvpn.log
+
+route 10.100.0.0 255.255.0.0
+
+route 192.168.0.0 255.255.255.0
+
+ask-pass /etc/openvpn/mopvn/secret
+script-security 3
+cd /etc/openvpn/movpn
+setenv MASTERING_OPENVPN server
+push "setenv-safe SPECIAL hack"
+up                    ./movpn-07-01-script.sh
+tls-verify            ./movpn-07-01-script.sh
+auth-user-pass-verify ./movpn-07-01-script.sh via-env
+client-connect        ./movpn-07-01-script.sh
+route-up              ./movpn-07-01-script.sh
+client-disconnect     ./movpn-07-01-script.sh
+learn-address         ./movpn-07-01-script.sh
+route-pre-down        ./movpn-07-01-script.sh
+down                  ./movpn-07-01-script.sh
+```
+
+Мы сохраняем его как `movpn-07-01-server.conf`. Вот некоторые заметки об этом файле конфигурации:
+
+* Маршруты, указанные в конфигурации сервера, предназначены только для демонстрационных целей, как мы увидим позже.
+* Чтобы обойти ошибку в OpenVPN 2.3.7, мы добавили следующую строку:
+  ```
+  ask-pass /etc/openvpn/movpn/secret
+  ```
+* В этом файле `secret` (фраза-пароль для расшифровки закрытого ключа сервера) хранится в виде открытого текста.
+* В этой конфигурации сервера мы также использовали следующую опцию, чтобы перейти в каталог, где расположен скрипт:
+
+  ```
+  cd /etc/openvpn/movpn
+  ```
+
+Это делает конфигурацию сервера короче и проще для чтения.
+
+---
+
+**Заметка**
+
+С опцией `cd` было бы возможно указать опции `ca`, `cert`, `key`, `dh` и `tls-auth`, используя более короткий путь, например:
+
+```
+ca./movpn-ca.crt
+```
+
+Тем не менее, рекомендуется всегда использовать абсолютные имена путей или параметр `--cd` и относительные пути для элементов, связанных с безопасностью, чтобы избежать путаницы.
+
+---
+
+* Мы также установили переменную среды на стороне сервера `MASTERING_OPENVPN` со значением `server`, используя следующую команду:
+
+```
+setenv MASTERING_OPENVPN server
+```
+
+* Мы передаем безопасную переменную среды всем клиентам, используя следующую команду:
+
+```
+push "setenv-safe SPECIAL hack"
+```
+
+* Внутри клиентских скриптов и плагинов эта переменная должна отображаться как `OPENVPN_SPECIAL`.
+
+Далее мы создаем следующий скрипт:
+
+```
+#!/bin/bash
+exec >> /tmp/movpn-07-01.log 2>&1
+date +"%H:%M:%S: START $script_type script ==="
+echo "argv = $0 $@"
+echo "user = 'id -un''id -gn'"
+env | sort | sed 's^/ /'
+date +"%H:%M:%S: END $script_type script ==="
+```
+
+Мы сохраняем это как `movpn-07-01-script.sh` в каталоге `/etc/openvpn/movpn`. Убедитесь, что скрипт исполняемый, создайте пустой файл журнала и запустите `openvpn`:
+
+```
+# chmod 0755 /etc/openvpn/movpn/mopvn-07-01-script.sh
+# touch /tmp/movpn-07-01.log
+# chown nobody /tmp/movpn-07-01.log
+# openvpn --config /etc/openvpn/movpn/movpn-07-01-server.conf
+```
+
+Прежде чем мы продолжим, взглянем на файл `/tmp/movpn-07-01.log`. Когда OpenVPN запускается, некоторые скрипты уже были выполнены:
+
+```
+15:46:57: START up script ===
+argv = ./movpn-07-01-script.sh tun0 1500 1541 10.200.0.1
+        255.255.255.0 init
+user = root/root
+[...]
+15:46:57: END up script ===
+15:46:57: START route-up script ===
+argv = ./movpn-07-01-script.sh
+user = root/root
+```
+
+Сценарии `up` и `route-up` были выполнены. Параметры, переданные в скрипт `up` представляли имя устройства TUN/TAP (`tun0`), `tun-mtu` (`1500`), и значения `link-mtu` (`1541`), IP-адрес VPN и маску сети (`10.200.0.1/255.255.255.0`) и тип вызова (возможные значения: `init` или `restart`).
+
+Обратите внимание, что оба сценария были выполнены с привилегиями «root». Мы кратко рассмотрим вывод файла журнала каждого скрипта.
+
+На стороне клиента мы настроили аналогичную конфигурацию. Сначала создайте следующий файл конфигурации:
+
+```
+client
+proto udp
+remote openvpnserver.example.com
+port 1194
+dev tun
+nobind
+
+remote-cert-tls server
+tls-auth  /etc/openvpn/movpn/ta.key 1
+ca        /etc/openvpn/movpn/movpn-ca.crt
+cert      /etc/openvpn/movpn/client1.crt
+key       /etc/openvpn/movpn/client1.key
+
+persist-tun
+persist-key
+
+explicit-exit-notify 3
+auth-user-pass
+
+script-security 3
+cd /etc/openvpn/movpn
+setenv MASTERING_OPENVPN client
+tls-verify           ./movpn-07-01-script.sh
+ipchange             ./movpn-07-01-script.sh
+up                   ./movpn-07-01-script.sh
+up-restart
+route-up             ./movpn-07-01-script.sh
+route-pre-down       ./movpn-07-01-script.sh
+down                 ./movpn-07-01-script.sh
+```
+
+Сохраните его как `movpn-07-01-client.conf` и заново создайте или скопируйте файл `movpn-07-01-script.sh` с сервера.
+
+Опять же, мы гарантируем, что скрипт является исполняемым, создаем пустой файл журнала и запускаем `openvpn`:
+
+```
+# chmod 0755 /etc/openvpn/movpn/mopvn-07-01-script.sh
+# openvpn --config /etc/openvpn/movpn/movpn-07-01-client.conf
+OpenVPN 2.3.7 x86_64-redhat-linux-gnu [SSL (OpenSSL)] [LZO] [EPOLL]
+[PKCS11] [MH] [IPv6] built on Jun 9 2015
+library versions: OpenSSL 1.0.1e-fips 11 Feb 2013, LZO 2.08
+Enter Auth Username: *****
+    ## введите "movpn"
+Enter Auth Password: ******
+    ## введите "secret"
+NOTE: the current --script-security setting may allow this configuration to call user-defined scripts
+Control Channel Authentication: using 'etcopenvpn/movpn/ta.key' as a OpenVPN static key file
+UDPv4 link local: [undef]
+UDPv4 link remote: [AF_INET]<IP>:1194
+WARNING: this configuration may cache passwords in memory -- use
+the auth-nocache option to prevent this
+[Mastering OpenVPN Server] Peer Connection Initiated with [AF_INET]
+<IP>:1194
+TUN/TAP device tun0 opened
+do_ifconfig, tt->ipv6=1, tt->did_ifconfig_ipv6_setup=1
+usrsbin/ip link set dev tun0 up mtu 1500
+usrsbin/ip addr add dev tun0 10.200.0.2/24 broadcast 10.200.0.255
+usrsbin/ip -6 addr add fd00::200:1000/112 dev tun0
+./movpn-07-01-script.sh tun0 1500 1541 10.200.0.2 255.255.255.0
+init
+Initialization Sequence Completed
+```
+
+Вы можете заполнить как захотите для `Auth username` и `Auth password`, так как серверный скрипт всегда будет возвращать успех.
+
+После установления соединения мы проверяем, что VPN-клиент и сервер могут связаться друг с другом, используя `ping` и `ping6`.
+
+Затем мы перезапускаем VPN-соединение, отправляя специальный сигнал OpenVPN клиенту:
+
+```
+# killall -USR1 openvpn
+```
+
+Это вызовет «программный сброс» клиента OpenVPN. После восстановления соединения мы еще раз проверяем, что VPN полностью функционирует. Программные сбросы происходят в реальных ситуациях, в основном, когда опция `persist-tun` используется на стороне клиента, а клиент OpenVPN находится в мобильной сети с роумингом, или когда сеть между клиентом и сервером не очень стабильна. В этом сценарии серверные сценарии вызываются с немного другими параметрами, как мы увидим ниже.
+
+Наконец, завершите VPN-соединение, завершив работу клиента. Теперь мы пройдемся по журналам сценариев на сервере и клиенте.
