@@ -169,3 +169,172 @@ broadcast 10.200.0.255
 * Строка 7 говорит нам, что OpenVPN смог открыть TUN-устройство `tun0`.
 * Строки с 8 по 10 перечисляют информацию IPv4, которую сервер передал к этому клиенту и показывают, что IP-адрес и маска сети задаются с помощью стандартной команды Linux `/sbin/ip`.
 * Строка 11 снова является волшебной строкой, которая сообщает нам, что VPN-соединение было успешно установлено и теперь мы можем безопасно общаться с сервером OpenVPN. Однако, как мы увидим позже, сообщения об ошибках могут еще не появиться.
+
+## Обнаружение неработающей установки
+
+Установка OpenVPN может не работать по многим причинам. В следующем разделе мы рассмотрим список распространенных сбоев. Во-первых, давайте посмотрим, что отображается в файлах журналов при неудачной попытке подключения. Сбои могут возникать очень рано при попытке подключения или даже после строки `Initialization Sequence Completed`.
+
+Если мы используем неправильный файл `tls-auth`, соединение очень рано оборвется. Это как раз и является причиной использования файла `tls-auth`, поскольку минимизирует нагрузку на наш сервер OpenVPN, когда мошеннические клиенты пытаются получить доступ. Клиент, который пытается подключиться без указания файла `tls-auth`, будет отображаться в журналах сервера следующим образом:
+
+```
+16:40:31 Authenticate/Decrypt packet error:
+         packet HMAC authentication failed
+16:40:31 TLS Error: incoming packet authentication failed from
+         [AF_INET]<CLIENT-IP>:49956
+16:40:33 Authenticate/Decrypt packet error:
+         packet HMAC authentication failed
+16:40:33 TLS Error: incoming packet authentication failed from
+         [AF_INET]<CLIENT-IP>:49956
+16:40:37 Authenticate/Decrypt packet error:
+         packet HMAC authentication failed
+16:40:37 TLS Error: incoming packet authentication failed from
+         [AF_INET]<CLIENT-IP>:49956
+16:40:45 Authenticate/Decrypt packet error:
+         packet HMAC authentication failed
+16:40:45 TLS Error: incoming packet authentication failed from
+         [AF_INET]<CLIENT-IP>:49956
+16:41:01 Authenticate/Decrypt packet error:
+         packet HMAC authentication failed
+16:41:01 TLS Error: incoming packet authentication failed from
+         [AF_INET]<CLIENT-IP>:49956
+```
+
+Об этом клиенте больше ничего не сообщается, поскольку сервер OpenVPN немедленно отклоняет попытку подключения. Из временных меток в файле журнала мы видим, что клиент увеличивает время задержки между попытками соединения с каждым неудачным соединением. Если в течение 60 секунд соединение не может быть установлено, клиент прервет:
+
+```
+TLS Error: TLS key negotiation failed to occur within 60 seconds
+(check your network connectivity)
+TLS Error: TLS handshake failed
+```
+
+Второй сбой соединения станет очевидным только после того, как соединение будет успешно инициализировано. Для этого мы указываем использование другого кодирующего шифра на одной стороне, но забываем сделать это на другой. В файле журнала клиента теперь будет отображаться следующее:
+
+```
+16:56:20 /sbin/ip link set dev tun0 up mtu 1500
+16:56:20 /sbin/ip addr add dev tun0 10.200.0.2/24 broadcast 10.200.0.255
+16:56:20 Initialization Sequence Completed
+16:56:30 Authenticate/Decrypt packet error: cipher final failed
+16:56:40 Authenticate/Decrypt packet error: cipher final failed
+```
+
+Таким образом, сначала соединение, кажется, было успешно установлено (строки с 1 по 3), но через 10 секунд шифрование и дешифрование канала данных не удается.
+
+---
+
+**Заметка**
+
+Если бы в этом случае использовался графический интерфейс Windows, значок графического интерфейса стал бы зеленым, но сама VPN не работала бы!
+
+---
+
+Во время инициализации будет сообщено о большинстве проблем конфигурации на стороне сервера или клиента. О проблемах маршрутизации, которые встречаются гораздо чаще, OpenVPN обычно не сообщает. Следовательно, требуются различные методы устранения неполадок.
+
+### Исправление распространенных ошибок конфигурации
+
+При настройке конфигурации OpenVPN есть несколько распространенных ошибок, которые легко допустить. Эти ошибки конфигурации можно условно разделить на четыре категории:
+
+* Сертификат (PKI) ошибки и несоответствия
+* Несоответствие опций, таких как `tun` по сравнению с `tap`, шифрование и сжатие
+* Недостаточно прав для запуска OpenVPN
+* Ошибки маршрутизации
+
+В этом разделе мы рассмотрим первые три из этих категорий. Ошибки маршрутизации будут обсуждаться позже в этой главе.
+
+### Неправильный сертификат CA в конфигурации клиента
+
+Файл конфигурации клиента почти всегда будет содержать три строки, подобные этой:
+
+```
+ca ca.crt
+cert client.crt
+key client.key
+```
+
+Эти файлы сертификатов и секретных ключей были созданы в [главе 3](cpater-03.md), _PKI и сертификаты_ и широко используются в последующих главах.
+Файл CA, однако, не должен указывать центр сертификации, который использовался для подписи файла сертификата клиента. Это должен быть публичный сертификат центра сертификации, который использовался для подписи сертификата сервера. Если сертификат сервера был подписан другим центром сертификации, клиент откажется подключиться к серверу. Это можно увидеть в файле журнала на стороне клиента:
+
+```
+UDPv4 link remote: [AF_INET]<SERVER-IP>:1194
+VERIFY ERROR: depth=1, error=self signed certificate in certificate
+chain: C=ZA, ST=Enlightenment, L=Overall, O=Mastering OpenVPN,
+CN=Mastering OpenVPN, emailAddress=root@example.org
+TLS_ERROR: BIO read tls_read_plaintext error: error:14090086:SSL
+routines:SSL3_GET_SERVER_CERTIFICATE:certificate verify failed
+TLS Error: TLS object -> incoming plaintext read error
+TLS Error: TLS handshake failed
+```
+
+В этом случае ошибки не регистрируются на стороне сервера, так как сертификат клиента считается действительным на сервере.
+
+Единственное, что зарегистрируется на сервере, это:
+
+```
+<CLIENT-IP>:42472 TLS: Initial packet from
+    [AF_INET]<CLIENT-IP>:42472, sid=9a1e4a84 cdbb6926
+<CLIENT-IP>:51441 TLS: Initial packet from
+    [AF_INET]<CLIENT-IP>:51441, sid=17d3c89b 6999ae97
+<CLIENT-IP>:43513 TLS: Initial packet from
+    [AF_INET]<CLIENT-IP>:43513, sid=4609202f 4c91c23d
+```
+
+Это показывает последовательные попытки подключения, которые сделаны клиентом OpenVPN.
+
+#### Как исправить
+
+Убедитесь, что в файле конфигурации клиента указан правильный файл CA.
+
+### Сертификат клиента не распознан сервером
+
+Если сертификат клиента не распознан сервером - сервер откажет в доступе к нему. Это может произойти, если используется неправильный (или мошеннический) клиентский сертификат или если клиентский сертификат был отозван, а опция `crl-verify` указана в файле конфигурации сервера.
+
+Следующие записи будут отображаться в файле журнала сервера, если неизвестный клиент попытается подключиться к серверу OpenVPN:
+
+```
+<CLIENT-IP>:57072 TLS: Initial packet from
+    [AF_INET]<CLIENT-IP>:57072, sid=a175f1be 6faed111
+<CLIENT-IP>:57072 VERIFY ERROR: depth=0, error=unable to get
+    local issuer certificate: C=NL, O=Cookbook, CN=client1,
+    name=Cookbook Client, emailAddress=janjust@nikhef.nl
+<CLIENT-IP>:57072 TLS_ERROR: BIO read tls_read_plaintext error:
+    error:140890B2:SSL routines:SSL3_GET_CLIENT_CERTIFICATE:
+    no certificate returned
+<CLIENT-IP>:57072 TLS Error: TLS object -> incoming plaintext
+    read error
+<CLIENT-IP>:57072 TLS Error: TLS handshake failed
+```
+
+Сервер не может проверить сертификат клиента, так как он не распознает сертификат CA, который использовался для его подписи. Поэтому отказывается разрешить этому клиенту подключаться.
+
+На стороне клиента никакие сообщения не печатаются в файле журнала в течение 60 секунд, после чего первоначальное рукопожатие прекращается и делается новая попытка подключения:
+
+```
+13:24:23 UDPv4 link local: [undef]
+13:24:23 UDPv4 link remote: [AF_INET]<SERVER-IP>:1194
+13:25:23 TLS Error:
+TLS key negotiation failed to occur within
+    60 seconds (check your network connectivity)
+13:25:23 TLS Error: TLS handshake failed
+13:25:23 SIGUSR1[soft,tls-error] received, process restarting
+13:25:25 Control Channel Authentication: using
+    '/etc/openvpn/movpn/ta.key' as a OpenVPN static key file
+13:25:25 UDPv4 link local: [undef]
+13:25:25 UDPv4 link remote: [AF_INET]<SERVER-IP>:1194
+```
+
+#### Как исправить
+
+Убедитесь, что сертификат клиента распознается сервером. Это можно сделать либо указав соответствующий сертификат CA в файле конфигурации сервера, либо добавив сертификат CA в составленный файл сертификата CA в файле конфигурации сервера:
+
+```
+# cat CA1.crt CA2.crt > /etc/openvpn/movpn/ca-stack.pem
+```
+
+Далее используйте следующее в конфигурации сервера:
+
+```
+ca /etc/openvpn/movpn/ca-stack.pem
+```
+
+Таким образом, клиентские сертификаты, подписанные `CA1.crt` или `CA2.crt` будут приняты сервером.
+
+Конечно, если это мошенник, пытающийся подключиться, то более подходящим решением может быть черный список IP-адресов, с которых клиент подключается.
